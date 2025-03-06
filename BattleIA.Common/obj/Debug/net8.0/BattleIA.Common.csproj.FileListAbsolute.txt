@@ -1,0 +1,11 @@
+C:\Users\mathi\Documents\Battle IA\BattleIA\BattleIA.Common\bin\Debug\net8.0\BattleIA.Common.deps.json
+C:\Users\mathi\Documents\Battle IA\BattleIA\BattleIA.Common\bin\Debug\net8.0\BattleIA.Common.dll
+C:\Users\mathi\Documents\Battle IA\BattleIA\BattleIA.Common\bin\Debug\net8.0\BattleIA.Common.pdb
+C:\Users\mathi\Documents\Battle IA\BattleIA\BattleIA.Common\obj\Debug\net8.0\BattleIA.Common.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\mathi\Documents\Battle IA\BattleIA\BattleIA.Common\obj\Debug\net8.0\BattleIA.Common.AssemblyInfoInputs.cache
+C:\Users\mathi\Documents\Battle IA\BattleIA\BattleIA.Common\obj\Debug\net8.0\BattleIA.Common.AssemblyInfo.cs
+C:\Users\mathi\Documents\Battle IA\BattleIA\BattleIA.Common\obj\Debug\net8.0\BattleIA.Common.csproj.CoreCompileInputs.cache
+C:\Users\mathi\Documents\Battle IA\BattleIA\BattleIA.Common\obj\Debug\net8.0\BattleIA.Common.dll
+C:\Users\mathi\Documents\Battle IA\BattleIA\BattleIA.Common\obj\Debug\net8.0\refint\BattleIA.Common.dll
+C:\Users\mathi\Documents\Battle IA\BattleIA\BattleIA.Common\obj\Debug\net8.0\BattleIA.Common.pdb
+C:\Users\mathi\Documents\Battle IA\BattleIA\BattleIA.Common\obj\Debug\net8.0\ref\BattleIA.Common.dll
