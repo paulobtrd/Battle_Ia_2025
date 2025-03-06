@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using BattleIA;
 
 
@@ -7,11 +8,8 @@ public class FeederIA
 
     // Pour faire des tirages de nombres aléatoires
     Random rand = new Random();
-
-
     // Pour détecter si c'est le tout premier tour du jeu
     bool isFirstTime;
-
     // mémorisation du niveau du bouclier de protection
     UInt16 currentShieldLevel;
     // variable qui permet de savoir si le bot a été touché ou non
@@ -30,6 +28,8 @@ public class FeederIA
     UInt16 energyLevel = 0;
 
     byte ScanSize = 0;
+
+    private int lastDirection = 0;
 
 
     public void consoleForeColorWrite(string couleur, string texte){
@@ -59,6 +59,7 @@ public class FeederIA
         isFirstTime = true;
         currentShieldLevel = 0;
         hasBeenHit = false;
+        lastDirection = 0;
     }
 
     // ****************************************************************************************************
@@ -74,97 +75,284 @@ public class FeederIA
         }
     }
 
+    // --- A* : Recherche du chemin vers la plus proche cellule d'énergie ---
+    private class Node
+    {
+        public int X, Y;
+        public int G; // Coût depuis le départ.
+        public int H; // Coût heuristique.
+        public int F { get { return G + H; } }
+        public Node Parent;
+ 
+        public Node(int x, int y)
+        {
+            X = x;
+            Y = y;
+            G = 0;
+            H = 0;
+            Parent = null;
+        }
+    }
+ 
+    private List<Node> FindPathToNearestEnergy()
+    {
+        (int minX, int maxX, int minY, int maxY) = GetSearchBounds();
+        List<(int X, int Y)> goals = GetEnergyGoals(minX, maxX, minY, maxY);
+        if (goals.Count == 0)
+            return null;
+ 
+        List<Node> openList = new List<Node>();
+        bool[,] closed = new bool[largeurMap, hauteurMap];
+        Node start = new Node(x, y)
+        {
+            G = 0,
+            H = CalculateHeuristic(x, y, goals)
+        };
+        openList.Add(start);
+ 
+        while (openList.Count > 0)
+        {
+            openList.Sort((a, b) => a.F.CompareTo(b.F));
+            Node current = openList[0];
+            openList.RemoveAt(0);
+            closed[current.X, current.Y] = true;
+ 
+            // Si une cellule d'énergie est atteinte, on reconstruit le chemin.
+            if (map[current.X, current.Y, 0] == 4)
+                return ReconstructPath(current);
+ 
+            ExpandNeighbors(current, openList, closed, goals, minX, maxX, minY, maxY);
+        }
+        return null;
+    }
+ 
+    private (int minX, int maxX, int minY, int maxY) GetSearchBounds()
+    {
+        int d = (ScanSize - 1) / 2;
+        int minX = Math.Max(0, x - d);
+        int maxX = Math.Min(largeurMap - 1, x + d);
+        int minY = Math.Max(0, y - d);
+        int maxY = Math.Min(hauteurMap - 1, y + d);
+        return (minX, maxX, minY, maxY);
+    }
+ 
+    private List<(int X, int Y)> GetEnergyGoals(int minX, int maxX, int minY, int maxY)
+    {
+        List<(int X, int Y)> goals = new List<(int, int)>();
+        for (int j = minY; j <= maxY; j++)
+        {
+            for (int i = minX; i <= maxX; i++)
+            {
+                if (map[i, j, 0] == 4)
+                    goals.Add((i, j));
+            }
+        }
+        return goals;
+    }
+ 
+    private int CalculateHeuristic(int i, int j, List<(int X, int Y)> goals)
+    {
+        int min = int.MaxValue;
+        foreach (var goal in goals)
+        {
+            int dist = Math.Abs(i - goal.X) + Math.Abs(j - goal.Y);
+            if (dist < min)
+                min = dist;
+        }
+        return min;
+    }
+ 
+    private void ExpandNeighbors(Node current, List<Node> openList, bool[,] closed, List<(int X, int Y)> goals, int minX, int maxX, int minY, int maxY)
+    {
+        int[] dx = { 0, -1, 0, 1 };
+        int[] dy = { -1, 0, 1, 0 };
+        for (int i = 0; i < 4; i++)
+        {
+            int newX = current.X + dx[i];
+            int newY = current.Y + dy[i];
+            if (newX < minX || newX > maxX || newY < minY || newY > maxY)
+                continue;
+            if (map[newX, newY, 0] <= 2)
+                continue;
+            if (closed[newX, newY])
+                continue;
+ 
+            int tentativeG = current.G + 1;
+            Node neighbor = openList.Find(n => n.X == newX && n.Y == newY);
+            if (neighbor == null)
+            {
+                neighbor = new Node(newX, newY)
+                {
+                    G = tentativeG,
+                    H = CalculateHeuristic(newX, newY, goals),
+                    Parent = current
+                };
+                openList.Add(neighbor);
+            }
+            else if (tentativeG < neighbor.G)
+            {
+                neighbor.G = tentativeG;
+                neighbor.Parent = current;
+            }
+        }
+    }
+ 
+    private List<Node> ReconstructPath(Node node)
+    {
+        List<Node> path = new List<Node>();
+        while (node != null)
+        {
+            path.Add(node);
+            node = node.Parent;
+        }
+        path.Reverse();
+        return path;
+    }
+ 
+    // --- Fonctions utilitaires de déplacement ---
+    private int OppositeDirection(int d)
+    {
+        switch (d)
+        {
+            case 1: return 3; // Nord <-> Sud
+            case 2: return 4; // Ouest <-> Est
+            case 3: return 1;
+            case 4: return 2;
+            default: return 0;
+        }
+    }
+ 
+    private bool IsAccessible(int d)
+    {
+        switch (d)
+        {
+            case 1: return (y - 1 >= 0 && map[x, y - 1, 0] > 2);
+            case 2: return (x - 1 >= 0 && map[x - 1, y, 0] > 2);
+            case 3: return (y + 1 < hauteurMap && map[x, y + 1, 0] > 2);
+            case 4: return (x + 1 < largeurMap && map[x + 1, y, 0] > 2);
+            default: return false;
+        }
+    }
+ 
+    private int CheckAdjacentEnergy()
+    {
+        if (y - 1 >= 0 && map[x, y - 1, 0] == 4)
+        {
+            y--;
+            lastDirection = 1;
+            return 1;
+        }
+        if (x + 1 < largeurMap && map[x + 1, y, 0] == 4)
+        {
+            x++;
+            lastDirection = 4;
+            return 4;
+        }
+        if (x - 1 >= 0 && map[x - 1, y, 0] == 4)
+        {
+            x--;
+            lastDirection = 2;
+            return 2;
+        }
+        if (y + 1 < hauteurMap && map[x, y + 1, 0] == 4)
+        {
+            y++;
+            lastDirection = 3;
+            return 3;
+        }
+        return 0;
+    }
+ 
+    private int GetDirectionFromDelta(int dx, int dy)
+    {
+        if (dx == 1) return 4;
+        if (dx == -1) return 2;
+        if (dy == 1) return 3;
+        if (dy == -1) return 1;
+        return 0;
+    }
+ 
+    private int GetRandomAccessibleDirection()
+    {
+        List<int> possibles = new List<int>();
+        if (y - 1 >= 0 && map[x, y - 1, 0] > 2) possibles.Add(1);
+        if (x + 1 < largeurMap && map[x + 1, y, 0] > 2) possibles.Add(4);
+        if (x - 1 >= 0 && map[x - 1, y, 0] > 2) possibles.Add(2);
+        if (y + 1 < hauteurMap && map[x, y + 1, 0] > 2) possibles.Add(3);
+        if (possibles.Count > 0)
+            return possibles[rand.Next(possibles.Count)];
+        return 0;
+    }
+ 
+    private void UpdatePosition(int direction)
+    {
+        switch (direction)
+        {
+            case 1: y--; break;
+            case 2: x--; break;
+            case 3: y++; break;
+            case 4: x++; break;
+        }
+    }
+ 
+    // Détermine la meilleure direction à suivre.
+    public int BestDir()
+    {
+        // 1. Vérification immédiate des cases adjacentes.
+        int adjacentDir = CheckAdjacentEnergy();
+        if (adjacentDir != 0)
+            return adjacentDir;
+ 
+        // 2. Recherche via A*.
+        List<Node> path = FindPathToNearestEnergy();
+        int bestDirection = 0;
+        if (path != null && path.Count > 1)
+        {
+            Node nextStep = path[1];
+            bestDirection = GetDirectionFromDelta(nextStep.X - x, nextStep.Y - y);
+        }
+        else
+        {
+            bestDirection = GetRandomAccessibleDirection();
+        }
+ 
+        // 3. Éviter le demi-tour immédiat.
+        if (lastDirection != 0 && bestDirection == OppositeDirection(lastDirection))
+        {
+            if (IsAccessible(lastDirection))
+                bestDirection = lastDirection;
+        }
+ 
+        UpdatePosition(bestDirection);
+        lastDirection = bestDirection;
+        return bestDirection;
+    }
 
     // ****************************************************************************************************
     /// On doit effectuer une action
     public byte[] GetAction()
     {
-        int direction = 0;
-        bool ok = false;
-        // Si le bot vient d'être touché
         if (hasBeenHit)
         {
-            // Le bot a-t-il encore du bouclier ?
-            if (currentShieldLevel == 0)
-            {
-                // NON ! On s'empresse d'en réactiver un de suite !
-                currentShieldLevel = (byte)rand.Next(1, 9);
-                return BotHelper.ActionShield(currentShieldLevel);
-            }
-            // oui, il reste du bouclier actif
-
-            // On réinitialise notre flag
-            hasBeenHit = false;
-
-            // Puis on déplace fissa le bot, au hazard...
-            do{
-                direction = rand.Next(1, 5);
-                switch (direction){
-                    case 1 : if(map[x,y-1,0]>2 && y-1>=0){ok=true;} break;
-                    case 2 : if(map[x-1,y,0]>2 && x-1>=0){ok=true;} break;
-                    case 3 : if(map[x,y+1,0]>2 && y+1<hauteurMap){ok=true;} break;
-                    case 4 : if(map[x+1,y,0]>2 && x+1<hauteurMap){ok=true;} break;
-                }
-            }while(ok!=true);
-            switch (direction){
-                case 1 : y--; Console.WriteLine("North"); break;
-                case 2 : x--; Console.WriteLine("West"); break;
-                case 3 : y++; Console.WriteLine("South"); break;
-                case 4 : x++; Console.WriteLine("East"); break;
-            }
-            return BotHelper.ActionMove((MoveDirection)direction);
-            /*
-            Explications :
-                rand.Next(1, 5)   : tire un nombre aléatoire entre 1 (inclus) et 5 (exclu), donc 1, 2, 3 ou 4
-                (MoveDirection)x : converti 'x' en type MoveDirection
-                sachant que 1 = North, 2 = West, 3 = South et 4 = East
-             */
+            return HandleHit();
         }
-
-        // S'il n'y a pas de bouclier actif, on en active un
         if (currentShieldLevel == 0)
         {
             currentShieldLevel = 1;
             return BotHelper.ActionShield(currentShieldLevel);
         }
-
-        // On déplace le bot au hazard
-        do{
-            direction = rand.Next(1, 5);
-            switch (direction){
-                case 1 : if(map[x,y-1,0]>2 && y-1>=0){ok=true;} break;
-                case 2 : if(map[x-1,y,0]>2 && x-1>=0){ok=true;} break;
-                case 3 : if(map[x,y+1,0]>2 && y+1<hauteurMap){ok=true;} break;
-                case 4 : if(map[x+1,y,0]>2 && x+1<hauteurMap){ok=true;} break;
-            }
-        }while(ok!=true);
-        switch (direction){
-            case 1 : y--; Console.WriteLine("North"); break;
-            case 2 : x--; Console.WriteLine("West"); break;
-            case 3 : y++; Console.WriteLine("South"); break;
-            case 4 : x++; Console.WriteLine("East"); break;
+        return BotHelper.ActionMove((MoveDirection)BestDir());
+    }
+ 
+    private byte[] HandleHit()
+    {
+        if (currentShieldLevel == 0)
+        {
+            currentShieldLevel = (byte)rand.Next(1, 9);
+            return BotHelper.ActionShield(currentShieldLevel);
         }
-        return BotHelper.ActionMove((MoveDirection)direction);
-
-
-        // Voici d'autres exemples d'actions possibles
-        // -------------------------------------------
-
-        // Si on ne veut rien faire, passer son tour
-        // return BotHelper.ActionNone();
-
-        // Déplacement du bot au nord
-        // return BotHelper.ActionMove(MoveDirection.North);
-
-        // Activation d'un bouclier de protection de niveau 10 (peut encaisser 10 points de dégats)
-        // return BotHelper.ActionShield(10);
-
-        // Activation d'un voile d'invisibilité sur une surface de 15
-        // return BotHelper.ActionCloak(15);
-
-        // Tir dans la direction sud
-        // return BotHelper.ActionShoot(MoveDirection.South);
-
+        hasBeenHit = false;
+        return BotHelper.ActionMove((MoveDirection)BestDir());
     }
 
 
@@ -187,6 +375,66 @@ public class FeederIA
         return Convert.ToByte((ScanSize-1)/2);
     }
 
+    public int[] BestQuatre(int scanSize)
+    {
+        int sum = 0;
+        int[] bestZone = new int[4];
+        int mapWidth = map.GetLength(0);
+        int mapHeight = map.GetLength(1);
+ 
+        // Quadrant en haut à gauche
+        for (int i = Math.Max(0, x - (scanSize - 1) / 2); i < Math.Min(mapWidth, x + 1); i++)
+        {
+            for (int j = Math.Max(0, y - (scanSize - 1) / 2); j < Math.Min(mapHeight, y); j++)
+            {
+                if (map[i, j, 0] == 4)
+                    sum++;
+            }
+        }
+        bestZone[0] = sum;
+        Console.WriteLine($"En haut à gauche : {bestZone[0]}");
+        sum = 0;
+ 
+        // Quadrant en haut à droite
+        for (int i = Math.Max(0, x + 1); i < Math.Min(mapWidth, x + (scanSize - 1) / 2 + 1); i++)
+        {
+            for (int j = Math.Max(0, y - (scanSize - 1) / 2); j < Math.Min(mapHeight, y + 1); j++)
+            {
+                if (map[i, j, 0] == 4)
+                    sum++;
+            }
+        }
+        bestZone[1] = sum;
+        Console.WriteLine($"En haut à droite : {bestZone[1]}");
+        sum = 0;
+ 
+        // Quadrant en bas à gauche
+        for (int i = Math.Max(0, x - (scanSize - 1) / 2); i < Math.Min(mapWidth, x); i++)
+        {
+            for (int j = Math.Max(0, y); j < Math.Min(mapHeight, y + (scanSize - 1) / 2 + 1); j++)
+            {
+                if (map[i, j, 0] == 4)
+                    sum++;
+            }
+        }
+        bestZone[2] = sum;
+        Console.WriteLine($"En bas à gauche : {bestZone[2]}");
+        sum = 0;
+ 
+        // Quadrant en bas à droite
+        for (int i = Math.Max(0, x); i < Math.Min(mapWidth, x + (scanSize - 1) / 2 + 1); i++)
+        {
+            for (int j = Math.Max(0, y + 1); j < Math.Min(mapHeight, y + (scanSize - 1) / 2 + 1); j++)
+            {
+                if (map[i, j, 0] == 4)
+                    sum++;
+            }
+        }
+        bestZone[3] = sum;
+        Console.WriteLine($"En bas à droite : {bestZone[3]}");
+ 
+        return bestZone;
+    }
 
     // ****************************************************************************************************
     /// Résultat du scan
@@ -323,7 +571,5 @@ public class FeederIA
         Console.Write(x);
         Console.WriteLine(valeurs.Length);
     }
-
-
 
 }
